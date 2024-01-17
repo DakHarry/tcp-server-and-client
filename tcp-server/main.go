@@ -2,8 +2,9 @@ package main
 
 import (
 	"fmt"
-	"io"
+	"math/rand"
 	"net"
+	"time"
 )
 
 func main() {
@@ -33,15 +34,14 @@ func handleMessage(conn net.Conn) {
 		fmt.Println(buffer)
 		data, err := conn.Read(buffer)
 		if err != nil {
-			if err == io.EOF {
-				fmt.Println("[Sever Response] finsied")
-			} else {
-				fmt.Println("Read buffer error:", err)
-			}
+			fmt.Println("Read buffer error:", err)
 			return
 		}
 
 		fmt.Printf("[Server Received] %s\n", buffer[:data])
+		waitTime := rand.Intn(10)
+		time.Sleep(time.Second * time.Duration(waitTime))
 		conn.Write(buffer[:data])
+		fmt.Printf("[Server Response] %s\n", buffer[:data])
 	}
 }
