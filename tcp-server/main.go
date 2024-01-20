@@ -12,14 +12,14 @@ import (
 )
 
 type TaskMgr struct {
-	proccessedTaskCount int
-	maxConcurrency      int
-	mu                  sync.Mutex
+	processedTaskCount int
+	maxConcurrency     int
+	mu                 sync.Mutex
 }
 
-func (mgr *TaskMgr) AddTask() {
+func (mgr *TaskMgr) addTask() {
 	mgr.mu.Lock()
-	mgr.proccessedTaskCount += 1
+	mgr.processedTaskCount += 1
 	mgr.mu.Unlock()
 }
 
@@ -38,8 +38,8 @@ func main() {
 	// shutdownSignal := make(chan struct{})
 	serverWg := new(sync.WaitGroup)
 	mgr := &TaskMgr{
-		proccessedTaskCount: 0,
-		maxConcurrency:      100,
+		processedTaskCount: 0,
+		maxConcurrency:     100,
 	}
 
 	go shutdownHandler(ln, c, serverWg)
@@ -48,7 +48,7 @@ func main() {
 	go handler(ctx, ln, serverWg, mgr)
 
 	serverWg.Wait()
-	fmt.Printf("All tasks are done. Total task is %v\n", mgr.proccessedTaskCount)
+	fmt.Printf("All tasks are done. Total task is %v\n", mgr.processedTaskCount)
 }
 
 func shutdownHandler(ln net.Listener, c chan os.Signal, wg *sync.WaitGroup) {
@@ -74,8 +74,7 @@ func handler(ctx context.Context, ln net.Listener, wg *sync.WaitGroup, mgr *Task
 			}
 		}
 
-		mgr.AddTask()
-		fmt.Println("Dispatch worker:", mgr.proccessedTaskCount)
+		fmt.Println("Dispatch worker...")
 		wg.Add(1)
 		go handleMessage(ctx, conn, mgr, wg)
 	}
@@ -88,7 +87,8 @@ func handleMessage(ctx context.Context, conn net.Conn, mgr *TaskMgr, wg *sync.Wa
 	}()
 
 	fmt.Println("Received message...")
-	fmt.Printf("Task Manager:: count %v\n", mgr.proccessedTaskCount)
+	mgr.addTask()
+	fmt.Printf("Task Manager:: count %v\n", mgr.processedTaskCount)
 	buffer := make([]byte, 1024)
 	for {
 		data, err := conn.Read(buffer)
