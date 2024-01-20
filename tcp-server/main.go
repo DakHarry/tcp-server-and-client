@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"math/rand"
 	"net"
+	"os"
+	"os/signal"
 	"sync"
 	"time"
 )
@@ -15,7 +17,7 @@ type TaskMgr struct {
 	mu                  sync.Mutex
 }
 
-func (mgr *TaskMgr) Count() {
+func (mgr *TaskMgr) AddTask() {
 	mgr.mu.Lock()
 	mgr.proccessedTaskCount += 1
 	mgr.mu.Unlock()
@@ -24,37 +26,59 @@ func (mgr *TaskMgr) Count() {
 func main() {
 	fmt.Println("Start TCP Server...")
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+
 	ln, err := net.Listen("tcp", ":8080")
 	if err != nil {
 		fmt.Println("Error:", err)
 	}
-	defer ln.Close()
 
+	// shutdownSignal := make(chan struct{})
+	serverWg := new(sync.WaitGroup)
 	mgr := &TaskMgr{
 		proccessedTaskCount: 0,
 		maxConcurrency:      100,
 	}
 
-	wg := new(sync.WaitGroup)
+	go shutdownHandler(ln, c, serverWg)
 
+	serverWg.Add(1)
+	go handler(ctx, ln, serverWg, mgr)
+
+	serverWg.Wait()
+	fmt.Printf("All tasks are done. Total task is %v\n", mgr.proccessedTaskCount)
+}
+
+func shutdownHandler(ln net.Listener, c chan os.Signal, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	<-c
+	fmt.Println("Received interrupt signal. Shutting down...")
+
+	// close(shutdownSignal)
+
+	// Close the listener to stop accepting new connections
+	_ = ln.Close()
+}
+
+func handler(ctx context.Context, ln net.Listener, wg *sync.WaitGroup, mgr *TaskMgr) {
 	for {
+		fmt.Println("[TCP] waiting..")
 		conn, err := ln.Accept()
 		if err != nil {
-			fmt.Println("Accept error:", err)
-			break
+			if opErr, ok := err.(*net.OpError); ok && opErr.Err.Error() == "use of closed network connection" {
+				fmt.Println("Listener closed. Exiting.")
+				break
+			}
 		}
-		if mgr.proccessedTaskCount == 3 {
-			break
-		}
+
+		mgr.AddTask()
+		fmt.Println("Dispatch worker:", mgr.proccessedTaskCount)
 		wg.Add(1)
 		go handleMessage(ctx, conn, mgr, wg)
 	}
-	time.Sleep(3 * time.Second)
-	cancel()
-	time.Sleep(time.Second)
-	fmt.Println("Main Goroutine exited")
-	wg.Wait()
-	fmt.Printf("All tasks are done. Total task is %v\n", mgr.proccessedTaskCount)
 }
 
 func handleMessage(ctx context.Context, conn net.Conn, mgr *TaskMgr, wg *sync.WaitGroup) {
@@ -64,11 +88,9 @@ func handleMessage(ctx context.Context, conn net.Conn, mgr *TaskMgr, wg *sync.Wa
 	}()
 
 	fmt.Println("Received message...")
-	mgr.Count()
 	fmt.Printf("Task Manager:: count %v\n", mgr.proccessedTaskCount)
 	buffer := make([]byte, 1024)
 	for {
-		// fmt.Println(buffer)
 		data, err := conn.Read(buffer)
 		if err != nil {
 			fmt.Println("Read buffer error:", err)
@@ -82,10 +104,3 @@ func handleMessage(ctx context.Context, conn net.Conn, mgr *TaskMgr, wg *sync.Wa
 		fmt.Printf("[Server Response] %s\n", buffer[:data])
 	}
 }
-
-// shutdown TODO:: graceful shutdown
-func shutdown() {
-
-}
-
-func broadcast() {}
